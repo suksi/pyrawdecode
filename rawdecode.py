@@ -12,19 +12,36 @@ class RawFormat(object):
 
         self._width = w
         self._height = h
-        self._bpp = bpp
         self._bayerorder = bayerorder
         self._encoding = encoding
-
+        self._bpp = self.GetBpp(bpp, encoding)
         self._stride = self.GetStride(w, encoding)
 
         self.CheckFormat()
 
         return
 
-    def CheckFormat(self):
-        print("Format, bayer order, w, h, bpp, stride: ", self._encoding, self._bayerorder, self._width, self._height, self._bpp, self._stride)
+    def GetBpp(self, bpp, encoding):
 
+        if bpp > 0:
+            return bpp
+        elif encoding.lower().find("raw8") > -1:
+            return 8
+        elif encoding.lower().find("raw10") > -1:
+            return 10
+        elif encoding.lower().find("raw12") > -1:
+            return 12
+        elif encoding.lower().find("raw14") > -1:
+            return 14
+        elif encoding.lower().find("raw16") > -1:
+            return 16
+
+        # default
+        return 16
+
+    def CheckFormat(self):
+        #print("Encoding, bayer order, w, h, bpp, stride: ", self._encoding, self._bayerorder, self._width, self._height, self._bpp, self._stride)
+        pass
 
     def GetStride(self, w, encoding):
         if encoding.lower().find("raw8") > -1:
@@ -36,27 +53,13 @@ class RawFormat(object):
         if encoding.lower().find("raw16") > -1:
             return int(w*2)
 
- 
-    def SetDimensions(self, w, h):
-        
-        if w <= 0 and h <= 0:
-            print ("ERROR: set width and height")
-                        
-            return
-
-        self._width = w
-        self._height = h
-
-        return
-
-
 class RawDecode(object):
     """ Raw Decode
     Raw decoder
     """
     def __init__(self):
         # decoded byte array in 16bpp format
-        self.decoded_raw16_arr = None
+        self.decoded_raw16 = None
 
         # 16bpp PIL image created from 16bpp array buffer
         self.image16bpp = None
@@ -71,79 +74,58 @@ class RawDecode(object):
        
         return
 
+    def SupportedRawTypes(self, ext):
+        for supported_type in self.raw_types:
+            if ext.lower().find(supported_type) > -1:
+                return True
+
+        return False
+
 
     def Decode(self, im_byte_arr, rawformat):
 
         if rawformat._encoding.lower().find('raw8') > -1:
-            self.decoded_raw16_arr = self.DecodeRaw8(im_byte_arr, rawformat._width, rawformat._height)
+            self.decoded_raw16 = self.DecodeRaw8(im_byte_arr, rawformat)
 
         elif rawformat._encoding.lower().find('raw10') > -1:
-            self.decoded_raw16_arr = self.DecodeRaw10(im_byte_arr, rawformat._width, rawformat._height)
+            self.decoded_raw16 = self.DecodeRaw10(im_byte_arr, rawformat)
         
         elif rawformat._encoding.lower().find('raw12') > -1:
-            self.decoded_raw16_arr = self.DecodeRaw16(im_byte_arr, rawformat._width, rawformat._height)
+            self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat)
 
         elif rawformat._encoding.lower().find('raw16') > -1:
-            self.decoded_raw16_arr = self.DecodeRaw16(im_byte_arr, rawformat._width, rawformat._height)
+            self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat)
 
-        self.SplitToChannels(self.decoded_raw16_arr, rawformat._width, rawformat._height, rawformat._bayerorder)
-
-        return
+        return self.decoded_raw16
 
 
-    def Save(self, filename="temp_16bpp.png"):
+    def DecodeRaw8(self, im_byte_arr, rawformat):
+        stride = rawformat._stride
+        width = rawformat._width
+        height = rawformat._height
+        print("DecodeRaw8(w:{},h:{},s:{})".format(width, height, stride))
 
-        if self.decoded_raw16_arr.all() != None:
-            Image.fromarray(self.decoded_raw16_arr).save(filename)
-            Image.fromarray(self.raw_16bpp_gr).save("gr.png")
-            Image.fromarray(self.raw_16bpp_r).save("r.png")
-            Image.fromarray(self.raw_16bpp_b).save("b.png")
-            Image.fromarray(self.raw_16bpp_gb).save("gb.png")
+        im_gray = np.zeros((height, width), 'uint16')        
 
-            rgb = self.GetRGB()
-            Image.fromarray(rgb).save("rgb.png")
+        for y in range(height):
+            # Raw10: 1 byte -> 1 pixel
+            for x in range(0, width, 1):
+                offset = int(stride * y + x)
 
-        return
+                # decode to 16 bit
+                im_gray[y, x] = ( im_byte_arr[offset]<<8 )
 
-    def GetRGB(self):
-        h = self.raw_16bpp_r.shape[0]
-        w = self.raw_16bpp_r.shape[1]
-        
-        half_rgb = np.zeros([h, w, 3], dtype=np.uint8)
+        # Create PIL image
+        return im_gray  
 
-        #gr = Image.fromarray(self.raw_16bpp_gr)
-        #r = Image.fromarray(self.raw_16bpp_r)
-        #b = Image.fromarray(self.raw_16bpp_b)
-        #gb = Image.fromarray(self.raw_16bpp_gb)
 
-        print(h,w)
-
-        for y in range(0,h-1):
-            for x in range(0,w-1):
-                #print(h,w)
-                r = float(self.raw_16bpp_r[y,x]) / 256
-                g = ( float(self.raw_16bpp_gr[y,x]) + float(self.raw_16bpp_gb[y,x]) ) / 512
-                b = float(self.raw_16bpp_b[y,x]) / 256
-               
-                # wb
-                #r = r*2.0
-                #b = b*1.7
-
-                r = min(255, r)
-                g = min(255, g)
-                b = min(255, b)
-
-                half_rgb[y,x,0] = np.uint8(r)
-                half_rgb[y,x,1] = np.uint8(g)
-                half_rgb[y,x,2] = np.uint8(b)
-
-        return half_rgb
-
-    def DecodeRaw10(self, im_byte_arr, width, height):
-        print("DecodeRaw10():", width, height)
+    def DecodeRaw10(self, im_byte_arr, rawformat):
+        stride = rawformat._stride
+        width = rawformat._width
+        height = rawformat._height
+        print("DecodeRaw10(w:{},h:{},s:{})".format(width, height, stride))
 
         im_gray = np.zeros((height, width), 'uint16')
-        stride = int(width*10/8)
 
         for y in range(height):
             # Raw10: 5 bytes -> 4 pixels
@@ -168,15 +150,16 @@ class RawDecode(object):
                 im_gray[y, x+2] = p3 << 6
                 im_gray[y, x+3] = p4 << 6
 
-        # Create PIL image
         return im_gray      
 
 
-    def DecodeRaw16(self, im_byte_arr, width, height):
-        print("DecodeRaw16():", width, height)
+    def DecodeRaw16(self, im_byte_arr, rawformat):
+        stride = rawformat._stride
+        width = rawformat._width
+        height = rawformat._height
+        print("DecodeRaw16(w:{},h:{},s:{})".format(width, height, stride))
 
         im_gray = np.zeros((height, width), 'uint16')
-        stride = int(width*2)
 
         for y in range(height):
             # Raw10: 2 bytes -> 1 pixels
@@ -188,26 +171,13 @@ class RawDecode(object):
 
         # Create PIL image
         return im_gray    
+            
+    def SplitToComponents(self, raw_bayer, rawformat):
+        width = rawformat._width
+        height = rawformat._height
+        bayerorder = rawformat._bayerorder
+        print("SplitToComponents(w:{},h:{},bo:{})".format(width, height, bayerorder))
 
-
-    def DecodeRaw8(self, im_byte_arr, width, height):
-        print("DecodeRaw16():", width, height)
-
-        im_gray = np.zeros((height, width), 'uint16')
-        stride = int(width)
-
-        for y in range(height):
-            # Raw10: 1 byte -> 1 pixel
-            for x in range(0, width, 1):
-                offset = int(stride * y + x)
-
-                # decode to 16 bit
-                im_gray[y, x] = ( im_byte_arr[offset]<<8 )
-
-        # Create PIL image
-        return im_gray    
-
-    def SplitToChannels(self, raw_bayer, width, height, bayerorder):
         #+---------+
         #| C1 | C2 |
         #+---------+
@@ -251,30 +221,77 @@ class RawDecode(object):
             self.raw_16bpp_r = c3
             self.raw_16bpp_gr = c4
 
-        return
-
-
     def BayerSplit(self, raw_bayer, w, h, offset_x, offset_y):
-        w = int(w/2)
-        h = int(h/2)
+        channel = np.zeros((int(h/2), int(w/2)), 'uint16')
 
-        channel = np.zeros((h, w), 'uint16')
-
-        for y in range(offset_y, h*2, 2):
-            for x in range(offset_x, w*2, 2):
+        for y in range(offset_y, h, 2):
+            for x in range(offset_x, w, 2):
                 ch_y = int(y/2)
                 ch_x = int(x/2)
                 channel[ch_y, ch_x] = raw_bayer[y,x]
 
         return channel
 
-    def SupportedRawTypes(self, ext):
-        for supported_type in self.raw_types:
-            if ext.lower().find(supported_type) > -1:
-                return True
+    def SaveAs(self, decoded_raw16, filename="temp_16bpp.png"):
 
-        return False
+        if decoded_raw16.all() != None:
+            Image.fromarray(decoded_raw16).save(filename)
 
+        return
+
+
+    def SaveComponents(self, decoded_raw16, rawformat):
+
+        if decoded_raw16.all() != None:
+            self.SplitToComponents(decoded_raw,rawformat)
+            Image.fromarray(self.raw_16bpp_gr).save("gr.png")
+            Image.fromarray(self.raw_16bpp_r).save("r.png")
+            Image.fromarray(self.raw_16bpp_b).save("b.png")
+            Image.fromarray(self.raw_16bpp_gb).save("gb.png")
+
+        return
+
+
+    def SaveRGB(self, decoded_raw16, rawformat):
+
+        if decoded_raw16.all() != None:
+
+            if self.raw_16bpp_gr is None:
+                self.SplitToComponents(decoded_raw,rawformat)
+    
+            rgb = self.GetRGB()
+            Image.fromarray(rgb).save("rgb.png")
+
+        return
+
+    def GetRGB(self):
+        h = self.raw_16bpp_r.shape[0]
+        w = self.raw_16bpp_r.shape[1]
+        print("GetRGB(w:{},h:{})".format(w,h))
+        
+        half_rgb = np.zeros([h, w, 3], dtype=np.uint8)
+
+        for y in range(0,h-1):
+            for x in range(0,w-1):
+                #print(h,w)
+                r = float(self.raw_16bpp_r[y,x]) / 256
+                g = ( float(self.raw_16bpp_gr[y,x]) + float(self.raw_16bpp_gb[y,x]) ) / 512
+                b = float(self.raw_16bpp_b[y,x]) / 256
+               
+                # wb
+                #r = r*2.0
+                #b = b*1.7
+
+                r = min(255, r)
+                g = min(255, g)
+                b = min(255, b)
+
+                half_rgb[y,x,0] = np.uint8(r)
+                half_rgb[y,x,1] = np.uint8(g)
+                half_rgb[y,x,2] = np.uint8(b)
+
+        return half_rgb
+  
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Raw image decoder')
@@ -282,42 +299,80 @@ if __name__ == "__main__":
     parser.add_argument('--dir', type=str, help='input directory')
     parser.add_argument('--width', type=int, help='width', default=0)
     parser.add_argument('--height', type=int, help='height', default=0)
-    parser.add_argument('--format', type=str, help='Raw format: raw8, raw10, raw12, raw16. Default: raw16', default='raw16')
-    parser.add_argument('--bpp', type=int, help='Bit depth: 1-16. Default: 16', default=16)
-    parser.add_argument('--out', type=str, help='Output file: [png]', default='png')
+    parser.add_argument('--bayerorder', type=str, help='Bayer order: [GRBG,RGGB,BGRG,GBRG]', default='BGGR')
+    parser.add_argument('--encoding', type=str, help='Raw format: raw8, raw10, raw12, raw16. Default: read from extension.')
+    parser.add_argument('--bpp', type=int, help='Bits per pixel in raw image: 1-16, if different than encoding. Default: read from extension', default = 0)
+    parser.add_argument('--splitcomponents', help='Save Gr, R, B, Gb components', action='store_true')
+    parser.add_argument('--rgb', help='Save RGB output (half resolution)', action='store_true')
+    parser.add_argument('--out', type=str, help='Output folder', default='./output')
 
     args = parser.parse_args()
 
     rawdecoder = RawDecode()
 
-    raw_data_arr = None
-
+    #
+    # Read file or directory: file parameter overrides dir
+    #
+    raw_images = []
     if args.file is not None:
-        input_files = [args.file] 
+        raw_images.append(args.file)
 
     elif args.dir is not None:
         input_files = os.listdir(args.dir)
+    
+        # Read files to list. Use file extension to check, if files are valid   
+        for f in input_files:
+            try:
+                filename, ext = os.path.splitext(f)
+
+                if rawdecoder.SupportedRawTypes(ext):
+                    raw_images.append(f)
+                else:
+                    pass
+                    #print("File: {} is not in list of supported raw types.".format(ext))
+
+            except IOError:
+                print("ERROR: Cannot open", f)
+    else:
+        print("ERROR: must define --file and/or --dir")
+
+    path = "./"
+    if args.out is not None:
+        path = "{}/".format(args.out)
+
+    #
+    # Process all raw images
+    #
+    print("Processing supported raw images: ", raw_images)
+
+    for rawfile in raw_images:
+        filename, ext = os.path.splitext(rawfile)
+        raw_data_arr = open(rawfile, "rb").read()
+
+        # set raw encoding according to user or file extension        
+        encoding = ext
+        if args.encoding is not None:
+            encoding = args.encoding
+
+        # Set format
+        raw_format = RawFormat(args.width, args.height, args.bpp, encoding, args.bayerorder)
         
-    raw_images = []
-    for f in input_files:
-        try:
-            filename, ext = os.path.splitext(f)
-
-            if rawdecoder.SupportedRawTypes(ext):
-               raw_images.append(f)
-
-        except IOError:
-            print("cannot open", f)
-
-    print("Found supported raw images: ", raw_images)
-
-    for raw in raw_images:
-        print()
-        raw_data_arr = open(raw, "rb").read()
-
-        # set raw format according to user of file extension
-        raw_format = RawFormat(args.width, args.height, args.bpp, args.format, "BGGR")
+        # Decode raw to 16 bits per pixel array
+        decoded_raw = rawdecoder.Decode(raw_data_arr, raw_format)
         
-        rawdecoder.Decode(raw_data_arr, raw_format)
-        rawdecoder.Save()
+        # Save decoded raw
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        #basename = os.path.basename(rawfile)
+        filename = filename + "{}".format(".png")
+        filename = path + filename
+        print("Saving:", filename)
+        rawdecoder.SaveAs(decoded_raw, filename)
+
+        if args.splitcomponents:
+            rawdecoder.SaveComponents(decoded_raw, raw_format)
+    
+        if args.rgb:
+            rawdecoder.SaveRGB(decoded_raw, raw_format)
   
