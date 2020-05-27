@@ -40,6 +40,7 @@ class RawFormat(object):
         return 16
 
     def CheckFormat(self):
+        # TODO: add sanity check for format
         #print("Encoding, bayer order, w, h, bpp, stride: ", self._encoding, self._bayerorder, self._width, self._height, self._bpp, self._stride)
         pass
 
@@ -88,7 +89,7 @@ class RawDecode(object):
             self.decoded_raw16 = self.DecodeRaw10(im_byte_arr, rawformat)
         
         elif rawformat._encoding.lower().find('raw12') > -1:
-            self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat)
+            self.decoded_raw16 = self.DecodeRaw12(im_byte_arr, rawformat)
 
         elif rawformat._encoding.lower().find('raw16') > -1:
             self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat)
@@ -149,6 +150,32 @@ class RawDecode(object):
 
         return im_gray      
 
+    def DecodeRaw12(self, im_byte_arr, rawformat):
+        stride = rawformat._stride
+        width = rawformat._width
+        height = rawformat._height
+        print("  DecodeRaw12(w:{},h:{},s:{})".format(width, height, stride))
+
+        im_gray = np.zeros((height, width), 'uint16')
+
+        for y in range(0, height):
+            # Raw10: 3 bytes -> 2 pixels
+            for x in range(0, width, 2):
+                offset = int(stride * y + x*12/8)
+
+                lsbs = int(im_byte_arr[offset+2])
+                lsb1 = lsbs>>4
+                lsb2 = lsbs&15
+
+                # decode to 12 bit
+                p1 = ( im_byte_arr[offset]  <<4 ) | lsb1
+                p2 = ( im_byte_arr[offset+1]<<4 ) | lsb2
+
+                # shift to 16bit
+                im_gray[y, x  ] = p1 << 4
+                im_gray[y, x+1] = p2 << 4
+
+        return im_gray   
 
     def DecodeRaw16(self, im_byte_arr, rawformat):
         stride = rawformat._stride
@@ -166,6 +193,7 @@ class RawDecode(object):
                 b2 = im_byte_arr[offset+1]
 
                 # decode to 16 bit
+                # TODO: Check byte order (not based on p16 output)
                 im_gray[y, x] = ( b2<<8 ) | ( b1 )
 
         # Create PIL image
@@ -242,6 +270,7 @@ class RawDecode(object):
         for y in range(0,h-1):
             for x in range(0,w-1):
                 #print(h,w)
+                #TODO: add rounding
                 r = float(self.raw_16bpp_r[y,x]) / 256
                 g = ( float(self.raw_16bpp_gr[y,x]) + float(self.raw_16bpp_gb[y,x]) ) / 512
                 b = float(self.raw_16bpp_b[y,x]) / 256

@@ -1,10 +1,16 @@
 # pyrawdecode
-Script for decoding raw bayer images (e.g. raw8, raw10, raw12, raw16).
+Script for decoding raw bayer images.
 
 ## Install
 You need to install following Python modules:
 - pip3 install pil
 - pip3 install numpy
+
+## Supported raw formats
+- RAW8 
+- RAW10
+- RAW12
+- RAW16
 
 ## Usage
 ```
