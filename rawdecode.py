@@ -62,6 +62,9 @@ class RawDecode(object):
         # decoded byte array in 16bpp format
         self.decoded_raw16 = None
 
+        # RGB
+        self.rgb = None
+
         # Bayer channels separately
         self.raw_16bpp_r = None
         self.raw_16bpp_gr = None
@@ -69,6 +72,9 @@ class RawDecode(object):
         self.raw_16bpp_b = None
 
         self.raw_types = ["raw8", "raw10", "raw12", "raw16"]
+
+        # defined endianness. Default to little endian.
+        self.endian = 'le'
        
         return
 
@@ -92,7 +98,7 @@ class RawDecode(object):
             self.decoded_raw16 = self.DecodeRaw12(im_byte_arr, rawformat)
 
         elif rawformat._encoding.lower().find('raw16') > -1:
-            self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat)
+            self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat, self.endian)
 
         return self.decoded_raw16
 
@@ -106,7 +112,7 @@ class RawDecode(object):
         im_gray = np.zeros((height, width), 'uint16')        
 
         for y in range(height):
-            # Raw10: 1 byte -> 1 pixel
+            # Raw8: 1 byte -> 1 pixel
             for x in range(0, width, 1):
                 offset = int(stride * y + x)
 
@@ -128,7 +134,7 @@ class RawDecode(object):
         for y in range(0, height):
             # Raw10: 5 bytes -> 4 pixels
             for x in range(0, width, 4):
-                offset = int(stride * y + x*10/8)
+                offset = int(stride * y + x*10/8)               
 
                 lsbs = int(im_byte_arr[offset+4])
                 lsb1 = (lsbs>>6)&3
@@ -137,17 +143,17 @@ class RawDecode(object):
                 lsb4 = lsbs&3
 
                 # decode to 10 bit
-                p1 = ( im_byte_arr[offset]  <<2 ) | lsb1
-                p2 = ( im_byte_arr[offset+1]<<2 ) | lsb2
-                p3 = ( im_byte_arr[offset+2]<<2 ) | lsb3
-                p4 = ( im_byte_arr[offset+3]<<2 ) | lsb4
+                p1 = (im_byte_arr[offset] <<2)   | lsb1
+                p2 = (im_byte_arr[offset+1] <<2) | lsb2
+                p3 = (im_byte_arr[offset+2] <<2) | lsb3
+                p4 = (im_byte_arr[offset+3] <<2) | lsb4
 
                 # shift to 16bit
                 im_gray[y, x  ] = p1 << 6
-                im_gray[y, x+1] = p2 << 6      
+                im_gray[y, x+1] = p2 << 6     
                 im_gray[y, x+2] = p3 << 6
                 im_gray[y, x+3] = p4 << 6
-
+    
         return im_gray      
 
     def DecodeRaw12(self, im_byte_arr, rawformat):
@@ -177,24 +183,34 @@ class RawDecode(object):
 
         return im_gray   
 
-    def DecodeRaw16(self, im_byte_arr, rawformat):
+    def DecodeRaw16(self, im_byte_arr, rawformat, endian = 'le'):
         stride = rawformat._stride
         width = rawformat._width
         height = rawformat._height
-        print("  DecodeRaw16(w:{},h:{},s:{})".format(width, height, stride))
+        print("  DecodeRaw16(w:{},h:{},s:{},e:{})".format(width, height, stride, endian))
+
+        shift_to_16 = 0
+        if rawformat._bpp > 0:
+            shift_to_16 = 16 - rawformat._bpp
 
         im_gray = np.zeros((height, width), 'uint16')
+
         for y in range(0, height):
-            # Raw10: 2 bytes -> 1 pixels
-            for x in range(0, width):
-                offset = int(stride * y + x*2)
+            # Raw16: 2 bytes -> 1 pixels
+            for x in range(0, width-1):
+                offset = int(stride * y + x*2)+1
 
                 b1 = im_byte_arr[offset]
                 b2 = im_byte_arr[offset+1]
 
                 # decode to 16 bit
-                # TODO: Check byte order (not based on p16 output)
-                im_gray[y, x] = ( b2<<8 ) | ( b1 )
+                if endian == "le": # little endian
+                    # | MSB | LSB |
+                    im_gray[y, x] = ( (b1<<8) | b2 ) << shift_to_16
+                else: # big endian
+                    # | LSB | MSB |
+                    im_gray[y, x] = ( (b2<<8) | b1 ) << shift_to_16
+                    
 
         # Create PIL image
         return im_gray    
@@ -260,7 +276,7 @@ class RawDecode(object):
         return channel
 
 
-    def GetRGB(self):
+    def GetRGB(self, processing):
         h = self.raw_16bpp_r.shape[0]
         w = self.raw_16bpp_r.shape[1]
         print("  GetRGB(w:{},h:{})".format(w,h))
@@ -269,15 +285,15 @@ class RawDecode(object):
 
         for y in range(0,h-1):
             for x in range(0,w-1):
-                #print(h,w)
                 #TODO: add rounding
-                r = float(self.raw_16bpp_r[y,x]) / 256
-                g = ( float(self.raw_16bpp_gr[y,x]) + float(self.raw_16bpp_gb[y,x]) ) / 512
-                b = float(self.raw_16bpp_b[y,x]) / 256
+                r = float(self.raw_16bpp_r[y,x] + 128) / 256
+                g = ( float(self.raw_16bpp_gr[y,x] ) + float(self.raw_16bpp_gb[y,x]) +256) / 512
+                b = float(self.raw_16bpp_b[y,x] +128) / 256
                
                 # wb
-                #r = r*2.0
-                #b = b*1.7
+                r = r * float(processing['wbgain'][0])
+                g = g * float(processing['wbgain'][1])
+                b = b * float(processing['wbgain'][2])
 
                 r = min(255, r)
                 g = min(255, g)
@@ -310,51 +326,72 @@ class RawDecode(object):
         return
 
 
-    def SaveRGB(self, decoded_raw16, rawformat, filename):
+    def SaveRGB(self, decoded_raw16, rawformat, filename, processing):
 
         if decoded_raw16.all() != None:
 
             if self.raw_16bpp_gr is None:
                 self.SplitToComponents(decoded_raw,rawformat)
     
-            rgb = self.GetRGB()
-            Image.fromarray(rgb).save(filename)
+            self.rgb = self.GetRGB(processing)
+            
+            if filename is not None:
+                Image.fromarray(self.rgb).save(filename)
 
-        return
+        return 
 
 
     def SavePlain16buf(self, decoded_raw16, filename="temp_16bpp.raw16"):
 
         if decoded_raw16.all() != None:
-            # TODO: verify byte order against sensor raw16
-            decoded_raw16.astype('uint16').tofile(filename)
+            if self.endian == 'le':
+                # save as little endian
+                decoded_raw16.astype('uint16').newbyteorder('<').tofile(filename)
+            else: # big endian
+                decoded_raw16.astype('uint16').newbyteorder('>').tofile(filename)
             
         return
   
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Raw image decoder')
+    # input / format
+    parser.add_argument('input', nargs='?', type=str, help='input file', default=None)
     parser.add_argument('--file', type=str, help='input file')
     parser.add_argument('--dir', type=str, help='input directory')
+    parser.add_argument('--outdir', type=str, help='Output folder', default='./output')
     parser.add_argument('--width', type=int, help='width', default=0)
     parser.add_argument('--height', type=int, help='height', default=0)
-    parser.add_argument('--bayerorder', type=str, help='Bayer order: [GRBG,RGGB,BGRG,GBRG]', default='BGGR')
+    parser.add_argument('--bayerorder', type=str, help='Bayer order: [GRBG,RGGB,BGGR,GBRG]', default='BGGR')
     parser.add_argument('--encoding', type=str, help='Raw format: raw8, raw10, raw12, raw16. Default: read from extension.')
-    parser.add_argument('--bpp', type=int, help='Bits per pixel in raw image: 1-16, if different than encoding. Default: read from extension', default = 0)
-    parser.add_argument('--png', help='Save decoded raw files as png', action='store_true')
+    parser.add_argument('--bpp', type=int, help='Bits per pixel in raw image: 1-16, if different than encoding. Bpp will be used to shift data to 16bpp. Default: read from extension', default = 0)
+    parser.add_argument('--endian', help='Use defined endianness when writing or reading 16 bit values (read/write .raw16). [le, be]. Default: le', default='le')
+    #exporting
+    parser.add_argument('--png', help='Save decoded raw files as png (16bit)', action='store_true')
+    parser.add_argument('--jpg', help='Save decoded raw files as jpg (8bit)', action='store_true')
     parser.add_argument('--components', help='Save Gr, R, B, Gb components as separate png', action='store_true')
-    parser.add_argument('--rgb', help='Save RGB output (half resolution at the moment) as png', action='store_true')
-    parser.add_argument('--plain16', help='Save Plain16 (raw16) as binary', action='store_true')
-    parser.add_argument('--outdir', type=str, help='Output folder', default='./output')
+    parser.add_argument('--plain16', help='Save Plain16 (.raw16) as 16bpp binary', action='store_true')
+    parser.add_argument('--rgb', help='Save RGB output (half resolution at the moment) as png (8bit)', action='store_true')
+    parser.add_argument('--display', help='Show processed image', action='store_true')
+    #processing    
+    parser.add_argument('--wb', nargs=3, help='White balance RGB gains: [R, G, B] - applied only for RGB export. Default: 1.0 1.0 1.0', default=[1.0, 1.0, 1.0])
 
     args = parser.parse_args()
 
     rawdecoder = RawDecode()
 
+    if args.endian != 'le':
+        # Not little endian
+        print("Set .raw16 read/write to '{}'".format(args.endian))
+        rawdecoder.endian = args.endian
+
     #
     # Read file or directory: file parameter overrides dir
     #
     raw_images = []
+    if args.input is not None:
+        raw_images.append(args.input)
+
     if args.file is not None:
         raw_images.append(args.file)
 
@@ -374,7 +411,7 @@ if __name__ == "__main__":
 
             except IOError:
                 print("ERROR: Cannot open", f)
-    else:
+    elif args.input is None:
         print("ERROR: must define --file and/or --dir")
 
     path = "./"
@@ -399,7 +436,8 @@ if __name__ == "__main__":
             encoding = args.encoding
 
         # Set format
-        raw_format = RawFormat(args.width, args.height, args.bpp, encoding, args.bayerorder)
+        # TODO: support bpp. Now setting 0 -> automatic from encoding.
+        raw_format = RawFormat(args.width, args.height, 0, encoding, args.bayerorder)
         
         # Decode raw to 16 bits per pixel array
         decoded_raw = rawdecoder.Decode(raw_data_arr, raw_format)
@@ -408,11 +446,20 @@ if __name__ == "__main__":
         if not os.path.exists(path):
             os.makedirs(path)
 
+        # set processing parameters
+        processing = {'wbgain' : args.wb}
+        
         print()
+
         if args.png:
             png_file = path + filename + "{}".format(".png")
             print("Saving:", png_file)
             rawdecoder.SaveAs(decoded_raw, png_file)
+
+        if args.jpg:
+            jpg_file = path + filename + "{}".format(".jpg")
+            print("Saving:", jpg_file)
+            rawdecoder.SaveAs(decoded_raw.astype('uint8'), jpg_file)
 
         if args.plain16:
             p16_file = path + filename + "{}".format(".raw16")
@@ -438,6 +485,12 @@ if __name__ == "__main__":
         if args.rgb:
             rgb_file = path + filename + "{}".format("_rgb.png")
             print("Saving:", rgb_file)
-            rawdecoder.SaveRGB(decoded_raw, raw_format, rgb_file)
+            rawdecoder.SaveRGB(decoded_raw, raw_format, rgb_file, processing)
+
+        if args.display:
+            if rawdecoder.rgb is None: 
+                rawdecoder.SaveRGB(decoded_raw, raw_format, None, processing)
+
+            Image.fromarray(rawdecoder.rgb).show()
         
   

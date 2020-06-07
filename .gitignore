@@ -130,6 +130,13 @@ dmypy.json
 
 .png
 .raw
-.raw*
+.raw8
+.raw10
+.raw12
+.raw14
+.raw16
+output/
 .pgm
 .ppe
+.DS_Store
+
