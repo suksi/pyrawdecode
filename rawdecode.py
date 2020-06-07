@@ -8,14 +8,17 @@ class RawFormat(object):
     """ Raw file format
     Holds raw file dimensions, bit depth etc.
     """
-    def __init__(self, w, h, bpp, encoding, bayerorder):
+    def __init__(self, w, h, bpp, encoding, bayerorder, header, left, right):
 
         self._width = w
         self._height = h
         self._bayerorder = bayerorder
         self._encoding = encoding
+        self.headerbytes = header
+        self.leftbytes = left
+        self.rightbytes = right
         self._bpp = self.GetBpp(bpp, encoding)
-        self._stride = self.GetStride(w, encoding)
+        self._stride = self.GetStride(w, encoding, left, right)
 
         self.CheckFormat()
 
@@ -44,15 +47,15 @@ class RawFormat(object):
         #print("Encoding, bayer order, w, h, bpp, stride: ", self._encoding, self._bayerorder, self._width, self._height, self._bpp, self._stride)
         pass
 
-    def GetStride(self, w, encoding):
+    def GetStride(self, w, encoding, left, right):
         if encoding.lower().find("raw8") > -1:
-            return int(w)
+            return int(w + left + right)
         if encoding.lower().find("raw10") > -1:
-            return int(w*10/8)
+            return int(w*10/8 + left + right)
         if encoding.lower().find("raw12") > -1:
-            return int(w*12/8)
+            return int(w*12/8 + left + right)
         if encoding.lower().find("raw16") > -1:
-            return int(w*2)
+            return int(w*2 + left + right)
 
 class RawDecode(object):
     """ Raw Decode
@@ -114,7 +117,7 @@ class RawDecode(object):
         for y in range(height):
             # Raw8: 1 byte -> 1 pixel
             for x in range(0, width, 1):
-                offset = int(stride * y + x)
+                offset = int(stride * y + x + rawformat.leftbytes + rawformat.headerbytes)
 
                 # decode to 16 bit
                 im_gray[y, x] = ( im_byte_arr[offset]<<8 )
@@ -134,7 +137,7 @@ class RawDecode(object):
         for y in range(0, height):
             # Raw10: 5 bytes -> 4 pixels
             for x in range(0, width, 4):
-                offset = int(stride * y + x*10/8)               
+                offset = int(stride * y + x*10/8 + rawformat.leftbytes  + rawformat.headerbytes)               
 
                 lsbs = int(im_byte_arr[offset+4])
                 lsb1 = (lsbs>>6)&3
@@ -167,7 +170,7 @@ class RawDecode(object):
         for y in range(0, height):
             # Raw10: 3 bytes -> 2 pixels
             for x in range(0, width, 2):
-                offset = int(stride * y + x*12/8)
+                offset = int(stride * y + x*12/8 + rawformat.leftbytes + rawformat.headerbytes)
 
                 lsbs = int(im_byte_arr[offset+2])
                 lsb1 = lsbs>>4
@@ -198,7 +201,7 @@ class RawDecode(object):
         for y in range(0, height):
             # Raw16: 2 bytes -> 1 pixels
             for x in range(0, width-1):
-                offset = int(stride * y + x*2)+1
+                offset = int(stride * y + x*2 + rawformat.leftbytes + rawformat.headerbytes)
 
                 b1 = im_byte_arr[offset]
                 b2 = im_byte_arr[offset+1]
@@ -362,6 +365,9 @@ if __name__ == "__main__":
     parser.add_argument('--outdir', type=str, help='Output folder', default='./output')
     parser.add_argument('--width', type=int, help='width', default=0)
     parser.add_argument('--height', type=int, help='height', default=0)
+    parser.add_argument('--headerbytes', type=int, help='Header Bytes before image data', default=0)
+    parser.add_argument('--leftbytes', type=int, help='Extra Bytes left of image data on every line', default=0)
+    parser.add_argument('--rightbytes', type=int, help='Extra Bytes right of image data on every line', default=0)
     parser.add_argument('--bayerorder', type=str, help='Bayer order: [GRBG,RGGB,BGGR,GBRG]', default='BGGR')
     parser.add_argument('--encoding', type=str, help='Raw format: raw8, raw10, raw12, raw16. Default: read from extension.')
     parser.add_argument('--bpp', type=int, help='Bits per pixel in raw image: 1-16, if different than encoding. Bpp will be used to shift data to 16bpp. Default: read from extension', default = 0)
@@ -436,8 +442,7 @@ if __name__ == "__main__":
             encoding = args.encoding
 
         # Set format
-        # TODO: support bpp. Now setting 0 -> automatic from encoding.
-        raw_format = RawFormat(args.width, args.height, 0, encoding, args.bayerorder)
+        raw_format = RawFormat(args.width, args.height, args.bpp, encoding, args.bayerorder, args.headerbytes, args.leftbytes, args.rightbytes)
         
         # Decode raw to 16 bits per pixel array
         decoded_raw = rawdecoder.Decode(raw_data_arr, raw_format)

@@ -14,8 +14,8 @@ You need to install following Python modules:
 
 ## Usage
 ```
-usage: rawdecode.py [-h] [--file FILE] [--dir DIR] [--outdir OUTDIR] [--width WIDTH] [--height HEIGHT] [--bayerorder BAYERORDER] [--encoding ENCODING] [--bpp BPP] [--endian ENDIAN] [--png] [--jpg]
-                    [--components] [--plain16] [--rgb] [--display] [--wb WB WB WB]
+usage: rawdecode.py [-h] [--file FILE] [--dir DIR] [--outdir OUTDIR] [--width WIDTH] [--height HEIGHT] [--headerbytes HEADERBYTES] [--leftbytes LEFTBYTES] [--rightbytes RIGHTBYTES] [--bayerorder BAYERORDER]
+                    [--encoding ENCODING] [--bpp BPP] [--endian ENDIAN] [--png] [--jpg] [--components] [--plain16] [--rgb] [--display] [--wb WB WB WB]
                     [input]
 
 Raw image decoder
@@ -30,6 +30,12 @@ optional arguments:
   --outdir OUTDIR       Output folder
   --width WIDTH         width
   --height HEIGHT       height
+  --headerbytes HEADERBYTES
+                        Header Bytes before image data
+  --leftbytes LEFTBYTES
+                        Extra Bytes left of image data on every line
+  --rightbytes RIGHTBYTES
+                        Extra Bytes right of image data on every line
   --bayerorder BAYERORDER
                         Bayer order: [GRBG,RGGB,BGGR,GBRG]
   --encoding ENCODING   Raw format: raw8, raw10, raw12, raw16. Default: read from extension.
@@ -41,7 +47,7 @@ optional arguments:
   --plain16             Save Plain16 (.raw16) as 16bpp binary
   --rgb                 Save RGB output (half resolution at the moment) as png (8bit)
   --display             Show processed image
-  --wb R G B         White balance RGB gains: [R, G, B] - applied only for RGB export. Default: 1.0 1.0 1.0
+  --wb WB WB WB         White balance RGB gains: [R, G, B] - applied only for RGB export. Default: 1.0 1.0 1.0
 ```
 ## Command line examples
 
@@ -52,10 +58,9 @@ Decode RAW10 file and save it as png, plain16, rgb (half resolution) and separat
 
 ## Backlog
 ```
+- Format and parameter checking
 - Verify RAW8
 - Verify RAW12
-- Output PNG as default
-- Support extra rows, columns, padding bytes, header bytes, tail bytes
 - Add Demosaic
 - Add Gamma
 - Add Black level
