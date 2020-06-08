@@ -157,7 +157,7 @@ class RawDecode(object):
                 im_gray[y, x+2] = p3 << 6
                 im_gray[y, x+3] = p4 << 6
     
-        return im_gray      
+        return im_gray 
 
     def DecodeRaw12(self, im_byte_arr, rawformat):
         stride = rawformat._stride
@@ -312,7 +312,13 @@ class RawDecode(object):
     def SaveAs(self, decoded_raw16, filename="temp_16bpp.png"):
 
         if decoded_raw16.all() != None:
-            Image.fromarray(decoded_raw16).save(filename)
+            if filename.lower().find('.png') > -1:
+                Image.fromarray(decoded_raw16).save(filename)
+            elif filename.lower().find('.jpg') > -1:
+                im = Image.fromarray((decoded_raw16 >> 8).astype('uint8'))
+                im.save(filename, quality=95)
+            else:
+                print("SaveAs(): ERROR - fileformat not defined (jpg or png)")
 
         return
 
@@ -464,7 +470,7 @@ if __name__ == "__main__":
         if args.jpg:
             jpg_file = path + filename + "{}".format(".jpg")
             print("Saving:", jpg_file)
-            rawdecoder.SaveAs(decoded_raw.astype('uint8'), jpg_file)
+            rawdecoder.SaveAs(decoded_raw, jpg_file)
 
         if args.plain16:
             p16_file = path + filename + "{}".format(".raw16")
@@ -485,10 +491,15 @@ if __name__ == "__main__":
             rawdecoder.SaveAs(rawdecoder.raw_16bpp_r, r_file)
             rawdecoder.SaveAs(rawdecoder.raw_16bpp_b, b_file)
             rawdecoder.SaveAs(rawdecoder.raw_16bpp_gb, gb_file)
-            #rawdecoder.SaveComponents(decoded_raw, raw_format, grbg_file)
     
         if args.rgb:
-            rgb_file = path + filename + "{}".format("_rgb.png")
+            rgb_file = path + filename + "{}".format("_rgb")
+            
+            if args.jpg:
+                rgb_file = rgb_file + "{}".format(".jpg")
+            else:
+                rgb_file = rgb_file + "{}".format(".png")
+
             print("Saving:", rgb_file)
             rawdecoder.SaveRGB(decoded_raw, raw_format, rgb_file, processing)
 
