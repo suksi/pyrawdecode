@@ -103,8 +103,13 @@ class RawDecode(object):
         elif rawformat._encoding.lower().find('raw16') > -1:
             self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat, self.endian)
 
-        return self.decoded_raw16
+        # Always shift data according bpp. E.g. raw12 is shifted by 4.
+        shift_to_16 = 0
+        if rawformat._bpp > 0:
+            shift_to_16 = 16 - rawformat._bpp
+            self.decoded_raw16 = (self.decoded_raw16 << shift_to_16)
 
+        return self.decoded_raw16
 
     def DecodeRaw8(self, im_byte_arr, rawformat):
         stride = rawformat._stride
@@ -119,8 +124,8 @@ class RawDecode(object):
             for x in range(0, width, 1):
                 offset = int(stride * y + x + rawformat.leftbytes + rawformat.headerbytes)
 
-                # decode to 16 bit
-                im_gray[y, x] = ( im_byte_arr[offset]<<8 )
+                # decode to 8 bit
+                im_gray[y, x] = im_byte_arr[offset]
 
         # Create PIL image
         return im_gray  
@@ -140,22 +145,16 @@ class RawDecode(object):
                 offset = int(stride * y + x*10/8 + rawformat.leftbytes  + rawformat.headerbytes)               
 
                 lsbs = int(im_byte_arr[offset+4])
-                lsb1 = (lsbs>>6)&3
-                lsb2 = (lsbs>>4)&3
-                lsb3 = (lsbs>>2)&3
-                lsb4 = lsbs&3
+                lsb4 = (lsbs>>6)&3
+                lsb3 = (lsbs>>4)&3
+                lsb2 = (lsbs>>2)&3
+                lsb1 = lsbs&3
 
                 # decode to 10 bit
-                p1 = (im_byte_arr[offset] <<2)   | lsb1
-                p2 = (im_byte_arr[offset+1] <<2) | lsb2
-                p3 = (im_byte_arr[offset+2] <<2) | lsb3
-                p4 = (im_byte_arr[offset+3] <<2) | lsb4
-
-                # shift to 16bit
-                im_gray[y, x  ] = p1 << 6
-                im_gray[y, x+1] = p2 << 6     
-                im_gray[y, x+2] = p3 << 6
-                im_gray[y, x+3] = p4 << 6
+                im_gray[y, x  ] = (im_byte_arr[offset]   <<2) | lsb1 #p1
+                im_gray[y, x+1] = (im_byte_arr[offset+1] <<2) | lsb2 #p2
+                im_gray[y, x+2] = (im_byte_arr[offset+2] <<2) | lsb3 #p3
+                im_gray[y, x+3] = (im_byte_arr[offset+3] <<2) | lsb4 #p4
     
         return im_gray 
 
@@ -173,16 +172,12 @@ class RawDecode(object):
                 offset = int(stride * y + x*12/8 + rawformat.leftbytes + rawformat.headerbytes)
 
                 lsbs = int(im_byte_arr[offset+2])
-                lsb1 = lsbs>>4
-                lsb2 = lsbs&15
+                lsb2 = lsbs>>4
+                lsb1 = lsbs&15
 
                 # decode to 12 bit
-                p1 = ( im_byte_arr[offset]  <<4 ) | lsb1
-                p2 = ( im_byte_arr[offset+1]<<4 ) | lsb2
-
-                # shift to 16bit
-                im_gray[y, x  ] = p1 << 4
-                im_gray[y, x+1] = p2 << 4
+                im_gray[y, x  ] = ( im_byte_arr[offset]  <<4 ) | lsb1 #p1
+                im_gray[y, x+1] = ( im_byte_arr[offset+1]<<4 ) | lsb2 #p2
 
         return im_gray   
 
@@ -191,10 +186,6 @@ class RawDecode(object):
         width = rawformat._width
         height = rawformat._height
         print("  DecodeRaw16(w:{},h:{},s:{},e:{})".format(width, height, stride, endian))
-
-        shift_to_16 = 0
-        if rawformat._bpp > 0:
-            shift_to_16 = 16 - rawformat._bpp
 
         im_gray = np.zeros((height, width), 'uint16')
 
@@ -209,12 +200,11 @@ class RawDecode(object):
                 # decode to 16 bit
                 if endian == "le": # little endian
                     # | MSB | LSB |
-                    im_gray[y, x] = ( (b1<<8) | b2 ) << shift_to_16
+                    im_gray[y, x] = ( (b2<<8) | b1 )
                 else: # big endian
                     # | LSB | MSB |
-                    im_gray[y, x] = ( (b2<<8) | b1 ) << shift_to_16
+                    im_gray[y, x] = ( (b1<<8) | b2 )
                     
-
         # Create PIL image
         return im_gray    
             
