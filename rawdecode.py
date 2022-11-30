@@ -103,11 +103,9 @@ class RawDecode(object):
         elif rawformat._encoding.lower().find('raw16') > -1:
             self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat, self.endian)
 
-        # Always shift data according bpp. E.g. raw12 is shifted by 4.
-        shift_to_16 = 0
-        if rawformat._bpp > 0:
-            shift_to_16 = 16 - rawformat._bpp
-            self.decoded_raw16 = (self.decoded_raw16 << shift_to_16)
+        # Scale data from lower bpp to 16 bpp
+        scale = ((2**16)-1)/((2**raw_format._bpp)-1)
+        self.decoded_raw16 = self.decoded_raw16*scale
 
         return self.decoded_raw16
 
