@@ -3,6 +3,9 @@ import argparse
 from PIL import Image
 import numpy as np
 
+def get_scale_factor(src_bpp:int, tgt_bpp:int):
+    return ((2**tgt_bpp)-1)/((2**src_bpp)-1)
+
 class RawFormat(object):
 
     """ Raw file format
@@ -104,8 +107,7 @@ class RawDecode(object):
             self.decoded_raw16 = self.DecodeRaw16(im_byte_arr, rawformat, self.endian)
 
         # Scale data from lower bpp to 16 bpp
-        scale = ((2**16)-1)/((2**raw_format._bpp)-1)
-        self.decoded_raw16 = self.decoded_raw16*scale
+        self.decoded_raw16 = self.decoded_raw16*get_scale_factor(src_bpp=raw_format._bpp, tgt_bpp=16)
 
         return self.decoded_raw16
 
@@ -301,9 +303,9 @@ class RawDecode(object):
 
         if decoded_raw16.all() != None:
             if filename.lower().find('.png') > -1:
-                Image.fromarray(decoded_raw16).save(filename)
+                Image.fromarray(decoded_raw16.astype('uint16')).save(filename)
             elif filename.lower().find('.jpg') > -1:
-                im = Image.fromarray((decoded_raw16 >> 8).astype('uint8'))
+                im = Image.fromarray((decoded_raw16 * get_scale_factor(src_bpp=16, tgt_bpp=8)).astype('uint8'))
                 im.save(filename, quality=95)
             else:
                 print("SaveAs(): ERROR - fileformat not defined (jpg or png)")
